@@ -1,9 +1,9 @@
 #!/usr/bin/gawk -f
-BEGIN {FS = ",";RST_Ind=0; Ret_AST_Index=0}
+BEGIN {FS = ",";RST_Ind=0; Ret_AST_Index=0; eval_counter=0}
 function Token_gen(colm){
 	delete Var_array; delete Syn_array;
 	RST_Ind++
-	split(colm,Var_array,/[^A-Za-z0-9\$\.]/,Syn_array)
+	split(colm,Var_array,/[^A-Za-z0-9\$\.""\s]/,Syn_array)
 	index_VA=0; index_SA=0
 	for(k=0;k<=length(Var_array)+length(Syn_array);k++){
 		if(k%2==0){
@@ -13,13 +13,15 @@ function Token_gen(colm){
 			Ret_Str[RST_Ind][k]=Syn_array[index_SA]
 			index_SA=(index_SA+1)%length(Syn_array)}
 	}
+	delete Var_array; delete Syn_array;
 	return RST_Ind
 }
 
 function Det_Type(Sym_Str){
 	switch(Sym_Str){
 		case /^=$/: return "EQN_BEGIN"; break
-		case /^[0-9]+\.*[0-9]*$/: return "NUMBER"":"Sym_Str; break
+		case /^".*"$/: return "STRING:"Sym_Str; break
+		case /^-*[0-9]+\.*[0-9]*$/: return "NUMBER"":"Sym_Str; break
 		case /^[A-Za-z]+[0-9]+$/: return "REF2CELL"":"Sym_Str ; break
 		case /^\$[0-9]+$/: return "LOCAL_REF:" Sym_Str; break
 		case /^[A-Za-z]+$/: return "FUNCT"":"Sym_Str; break
@@ -43,7 +45,7 @@ function ResVar(AST_Symbol){
 		else if(Resolve_Flag==1){
 			delete TMP_array
 			split(AST_Symbol,TMP_array,/\$/)
-			Res_Symbol=$TMP_array[2]
+			Res_Symbol=Eval($TMP_array[2])
 			Resolve_Flag=0
 			break;
 		}
@@ -66,33 +68,43 @@ function AST_Gen(Tree_Index){
 		}
 	}
 	#for(g in AST_Tree[Ret_AST_Index]) {print AST_Tree[Ret_AST_Index][g]j ", "}
+	delete Ret_Str[Tree_Index]
 	return Ret_AST_Index
 }
 
 function AST_Solve(AST_PTR){
+
+	#Variable Subsitution
 	for(statement in AST_Tree[AST_PTR]){
 		CP_Symbol=AST_Tree[AST_PTR][statement];
 		switch(CP_Symbol){
 			case /^LOCAL_REF/: AST_Tree[AST_PTR][statement]=ResVar(CP_Symbol) ; break 
 			default:; break
 		}
-
 	}
-		for(g in AST_Tree[AST_PTR]) printf AST_Tree[AST_PTR][g] ", ";
-		printf "\n"
+
+	#Operater Preforming
+	
+	#Function Calling
+
+	return AST_Tree[AST_PTR][1]
 }
 
 function Eval(cell){
-	if(cell ~ /^=/){ AST_Solve(AST_Gen(Token_gen(cell)))"\n";}
+	eval_counter++;
+	if(eval_counter>32768){print "MAX_RECURSION";exit(-1)}
+	if(cell ~ /^=/){ cell = AST_Solve(AST_Gen(Token_gen(cell))); return cell}
 	else return cell
 }
 
 {
 	for(i=1;i<=NF;i++){
-		
-		Eval($i)
+		$i=Eval($i)
 		#Garbage Collecting
 		delete Ret_Str; RST_Ind=0;
-		delete AST_Tree; ;
+		delete AST_Tree; Ret_AST_Index=0; eval_counter=0;
+		printf $i FS 
 	}
+	printf "\n"
 }
+END{printf "\n"}
