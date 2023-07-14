@@ -1,5 +1,5 @@
 #!/usr/bin/gawk -f
-BEGIN {FS = ",";RST_Ind=0; Ret_AST_Index=0; eval_counter=0}
+BEGIN {FS = ",";}
 function Token_gen(colm){
 	delete Var_array; delete Syn_array;
 	RST_Ind++
@@ -22,7 +22,6 @@ function Det_Type(Sym_Str){
 		case /^=$/: return "EQN_BEGIN"; break
 		case /^".*"$/: return "STRING:"Sym_Str; break
 		case /^-*[0-9]+\.*[0-9]*$/: return "NUMBER"":"Sym_Str; break
-		case /^[A-Za-z]+[0-9]+$/: return "REF2CELL"":"Sym_Str ; break
 		case /^\$[0-9]+$/: return "LOCAL_REF:" Sym_Str; break
 		case /^[A-Za-z]+$/: return "FUNCT"":"Sym_Str; break
 		case /^\($/: return "CALL_BEGIN"; break
@@ -37,21 +36,16 @@ function ResVar(AST_Symbol){
 	Resolve_Flag=0
 	switch(AST_Symbol){
 		case /^LOCAL_REF/: Resolve_Flag = 1; break;
-		case /^REF2CELL/: Resolve_Flag = 2; break;
 		default: Resolve_Flag = 0; break;
 	}
 	while(1){
 		if(Resolve_Flag==0){Res_Symbol=AST_Symbol; break;}
 		else if(Resolve_Flag==1){
-			delete TMP_array
-			split(AST_Symbol,TMP_array,/\$/)
-			Res_Symbol=Eval($TMP_array[2])
+			#split(AST_Symbol,TMP_array,/\$/)
+			sub(/^.*\$/,"",AST_Symbol)
+			Res_Symbol=Eval($AST_Symbol)
 			Resolve_Flag=0
 			break;
-		}
-		else if(Resolve_Flag==2){
-			print "Global Cell Searching Currently Not Supported"
-			Resolve_Flag=0
 		}
 	}
 	return Res_Symbol;
@@ -73,38 +67,119 @@ function AST_Gen(Tree_Index){
 }
 
 function AST_Solve(AST_PTR){
-
 	#Variable Subsitution
 	for(statement in AST_Tree[AST_PTR]){
 		CP_Symbol=AST_Tree[AST_PTR][statement];
-		switch(CP_Symbol){
-			case /^LOCAL_REF/: AST_Tree[AST_PTR][statement]=ResVar(CP_Symbol) ; break 
-			default:; break
-		}
+		if(CP_Symbol ~ /^LOCAL_REF/) AST_Tree[AST_PTR][statement]=ResVar(CP_Symbol); 
 	}
-
-	#Operater Preforming
-	
-	#Function Calling
-
+	#Binary Operators
+	NEXT_OP=0
+	NEXT_OP=Preeceedence_Gen(AST_PTR)
+	while(NEXT_OP != 0 ){
+		SHIFT_CONST=0; PIVOT=0
+		SHIFT_CONST=BINOP_DET_SC(AST_PTR,NEXT_OP)
+		SHIFT_WIDTH=2
+		switch(SHIFT_CONST){
+			case 0:PIVOT=NEXT_OP;break;
+			case 1:PIVOT=NEXT_OP+1;SHIFT_WIDTH=1;break;
+			case 2: ;break;
+			case 3: ;break;
+		}
+		AST_Tree[AST_PTR][PIVOT-1]=Det_Type(BINOP_SOLVE(AST_PTR,NEXT_OP))
+		Array_Right_Shift(AST_Tree[AST_PTR],PIVOT,SHIFT_WIDTH)
+		#for(y in AST_Tree[AST_PTR]) printf AST_Tree[AST_PTR][y] FS; printf "\n"
+		NEXT_OP=Preeceedence_Gen(AST_PTR)
+		#printf NEXT_OP FS "\n"
+	}
 	return AST_Tree[AST_PTR][1]
 }
 
+function Preeceedence_Gen(AST_pointer){
+	#Operater Preforming
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /:\*/)return statement}
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /:\+/)return statement}
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /OP:-/ )return statement}
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /:\//)return statement}
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /:%/ )return statement}
+	return 0
+}
+	
+
+function BINOP_SOLVE(BINOP_Tree,BINOP_Ind){
+	BINOP_OP=AST_Tree[BINOP_Tree][BINOP_Ind]
+	BINOP_LEFT=AST_Tree[BINOP_Tree][BINOP_Ind-1]
+	BINOP_RIGHT=AST_Tree[BINOP_Tree][BINOP_Ind+1]
+	BIN_SC=0
+	switch(BINOP_LEFT){
+		case /NUMBER/: sub("^.*:","",BINOP_LEFT) ;break;
+		case /^STRING/: sub("^.*:","",BINOP_LEFT) ;break;
+		case /^FUNCT/: ;break;
+		default: BINOP_LEFT = 0; BIN_SC++ ;break;
+		}
+	switch(BINOP_RIGHT){
+		case /NUMBER/: sub("^.*:","",BINOP_RIGHT) ;break;
+		case /^STRING/: sub("^.*:","",BINOP_RIGHT) ;break;
+		case /^FUNCT/: ;break;
+		default: BINOP_RIGHT = 0; BIN_SC=BIN_SC+2;break;
+		}
+	switch(BINOP_OP){
+		case /\+/ :return BINOP_LEFT+BINOP_RIGHT;break;
+		case /-/ :return BINOP_LEFT-BINOP_RIGHT;break;
+		case /\*/ :return BINOP_LEFT*BINOP_RIGHT;break;
+		case /\// :return BINOP_LEFT/BINOP_RIGHT;break;
+		case /%/ :return BINOP_LEFT%BINOP_RIGHT;break;
+	}
+}
+function BINOP_DET_SC(BINOP_Tree,BINOP_Ind){
+	BINOP_LEFT=AST_Tree[BINOP_Tree][BINOP_Ind-1]
+	BINOP_RIGHT=AST_Tree[BINOP_Tree][BINOP_Ind+1]
+	BIN_SC=0
+	switch(BINOP_LEFT){
+		case /NUMBER/: ;break;
+		case /^STRING/:;break;
+		case /^FUNCT/: ;break;
+		case /^U_/:print "U_SYMBOLS"; exit(64);break;
+		default: BIN_SC++ ;break;
+		}
+	switch(BINOP_RIGHT){
+		case /NUMBER/: ;break;
+		case /^STRING/:;break;
+		case /^FUNCT/: ;break;
+		case /^U_/:print "U_SYMBOLS"; exit(64);break;
+		default: BIN_SC=BIN_SC+2;break;
+	}
+	return BIN_SC
+}
+
+function Array_Right_Shift(Array_In,Arr_StartPoint, Arr_Shift){
+	ArrShift_Index++
+	for(c=Arr_StartPoint;c<length(Array_In);c++){
+		Array_In[c]=Array_In[c+Arr_Shift]
+		delete Array_In[c+Arr_Shift]
+	}
+}
+
 function Eval(cell){
-	eval_counter++;
-	if(eval_counter>32768){print "MAX_RECURSION";exit(-1)}
+	eval_counter++; if(eval_counter>32768){print "MAX_RECURSION";exit(-1)}
 	if(cell ~ /^=/){ cell = AST_Solve(AST_Gen(Token_gen(cell))); return cell}
 	else return cell
 }
 
 {
 	for(i=1;i<=NF;i++){
+		RST_Ind=0; Ret_AST_Index=0; ArrShift_Index=0; eval_counter=0;
 		$i=Eval($i)
 		#Garbage Collecting
-		delete Ret_Str; RST_Ind=0;
-		delete AST_Tree; Ret_AST_Index=0; eval_counter=0;
-		printf $i FS 
+		delete AST_Tree;
+		j=$i
+		sub(/^.*:/,"",j)
+		printf j FS
+		j=""
 	}
 	printf "\n"
 }
-END{printf "\n"}
