@@ -17,6 +17,7 @@ function Token_gen(colm){
 	return RST_Ind
 }
 
+function Is_Symbol(Symbol_Name){if(Symbol_Name ~ /^[A-Z_-]+:?/) return 1; else return 0}
 function Det_Type(Sym_Str){
 	switch(Sym_Str){
 		case /^=$/: return "EQN_BEGIN"; break
@@ -27,8 +28,9 @@ function Det_Type(Sym_Str){
 		case /^\($/: return "CALL_BEGIN"; break
 		case /^\)$/: return "CALL_END"; break
 		case /^$/: return "BLANK"; break;
-		case /^[-\+\*\/%]+/: return "BINOP"":"Sym_Str; break
-		default: return "U_SYMBOL"; break
+		case /^[-\+\*\/\^]+/: return "BINOP"":"Sym_Str; break
+		case /^[A-Z_-]+:?/: return "SYMBOL:"Sym_Str;break;
+		default: return "U_SYMBOL:"Sym_Str; break
 	}
 }
 
@@ -82,30 +84,31 @@ function AST_Solve(AST_PTR){
 		switch(SHIFT_CONST){
 			case 0:PIVOT=NEXT_OP;break;
 			case 1:PIVOT=NEXT_OP+1;SHIFT_WIDTH=1;break;
+			case 16: PIVOT=NEXT_OP; SHIFT_WIDTH=3;break;
 			case 2: ;break;
 			case 3: ;break;
 		}
 		AST_Tree[AST_PTR][PIVOT-1]=Det_Type(BINOP_SOLVE(AST_PTR,NEXT_OP))
 		Array_Right_Shift(AST_Tree[AST_PTR],PIVOT,SHIFT_WIDTH)
-		#for(y in AST_Tree[AST_PTR]) printf AST_Tree[AST_PTR][y] FS; printf "\n"
+		#for(w in AST_Tree[AST_PTR]) printf AST_Tree[AST_PTR][w] FS; printf "\n"
 		NEXT_OP=Preeceedence_Gen(AST_PTR)
-		#printf NEXT_OP FS "\n"
 	}
+	if(AST_PTR != 1) sub("^.*:","", AST_Tree[AST_PTR][1])
 	return AST_Tree[AST_PTR][1]
 }
 
 function Preeceedence_Gen(AST_pointer){
 	#Operater Preforming
 	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /^CALL_BEGIN/ )return statement}
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /(OP:\^)/ )return statement}
+	for(statement in AST_Tree[AST_pointer]){
+		if (AST_Tree[AST_pointer][statement] ~ /(OP:-|\+)/ )return statement}
+	for(statement in AST_Tree[AST_pointer]){
 		if (AST_Tree[AST_pointer][statement] ~ /:\*/)return statement}
 	for(statement in AST_Tree[AST_pointer]){
-		if (AST_Tree[AST_pointer][statement] ~ /:\+/)return statement}
-	for(statement in AST_Tree[AST_pointer]){
-		if (AST_Tree[AST_pointer][statement] ~ /OP:-/ )return statement}
-	for(statement in AST_Tree[AST_pointer]){
 		if (AST_Tree[AST_pointer][statement] ~ /:\//)return statement}
-	for(statement in AST_Tree[AST_pointer]){
-		if (AST_Tree[AST_pointer][statement] ~ /:%/ )return statement}
 	return 0
 }
 	
@@ -118,27 +121,31 @@ function BINOP_SOLVE(BINOP_Tree,BINOP_Ind){
 	switch(BINOP_LEFT){
 		case /NUMBER/: sub("^.*:","",BINOP_LEFT) ;break;
 		case /^STRING/: sub("^.*:","",BINOP_LEFT) ;break;
-		case /^FUNCT/: ;break;
+		case /^CALL/: ;break;
 		default: BINOP_LEFT = 0; BIN_SC++ ;break;
 		}
 	switch(BINOP_RIGHT){
 		case /NUMBER/: sub("^.*:","",BINOP_RIGHT) ;break;
 		case /^STRING/: sub("^.*:","",BINOP_RIGHT) ;break;
-		case /^FUNCT/: ;break;
 		default: BINOP_RIGHT = 0; BIN_SC=BIN_SC+2;break;
 		}
 	switch(BINOP_OP){
+		case /^CALL/: return FR_EVAL(BINOP_Tree,BINOP_Ind) ;break;
+		case /\^/ :return BINOP_LEFT**BINOP_RIGHT;break;
 		case /\+/ :return BINOP_LEFT+BINOP_RIGHT;break;
 		case /-/ :return BINOP_LEFT-BINOP_RIGHT;break;
 		case /\*/ :return BINOP_LEFT*BINOP_RIGHT;break;
 		case /\// :return BINOP_LEFT/BINOP_RIGHT;break;
-		case /%/ :return BINOP_LEFT%BINOP_RIGHT;break;
 	}
 }
+
 function BINOP_DET_SC(BINOP_Tree,BINOP_Ind){
+	BINOP_OP=AST_Tree[BINOP_Tree][BINOP_Ind]
 	BINOP_LEFT=AST_Tree[BINOP_Tree][BINOP_Ind-1]
 	BINOP_RIGHT=AST_Tree[BINOP_Tree][BINOP_Ind+1]
 	BIN_SC=0
+	if(BINOP_OP ~ /^CALL/){return 16;}
+	#print BINOP_LEFT FS BINOP_OP FS BINOP_RIGHT FS
 	switch(BINOP_LEFT){
 		case /NUMBER/: ;break;
 		case /^STRING/:;break;
@@ -156,9 +163,31 @@ function BINOP_DET_SC(BINOP_Tree,BINOP_Ind){
 	return BIN_SC
 }
 
+
+function FR_EVAL(FN_TREE,FN_PTR){
+	FN_NAME=AST_Tree[FN_TREE][FN_PTR-1]
+	FN_ARG=AST_Tree[FN_TREE][FN_PTR+1]
+	sub(/^.*:/,"",FN_NAME)
+	switch(FN_NAME){
+		case "echo": return echo(FN_ARG)	;break;
+		case "eval": return Eval(FN_ARG)	;break;
+		case "bc"  : return FR_BC(FN_ARG)	;break;
+	}
+	return 0
+}
+function FR_BC(BC_EXPRESSION){
+	cmd="echo "BC_EXPRESSION" | bc -l"
+	cmd | getline bc_retval
+	close(cmd)
+	return bc_retval
+}
+function echo(ECHO_ARGV){
+	return sprintf(ECHO_ARGV)
+}
+
 function Array_Right_Shift(Array_In,Arr_StartPoint, Arr_Shift){
-	ArrShift_Index++
-	for(c=Arr_StartPoint;c<length(Array_In);c++){
+	ARS_Len=length(Array_In)
+	for(c=Arr_StartPoint;c<=ARS_Len;c++){
 		Array_In[c]=Array_In[c+Arr_Shift]
 		delete Array_In[c+Arr_Shift]
 	}

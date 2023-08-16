@@ -1,5 +1,7 @@
 # AWK CSV EXPRESSION PROCESSOR
 ## By Oliver Webb
+
+## This project is experimental and currently being revised. In it's current state it is not recommended for actual work
 ________________________________
 
 ACEP is a CSV processor that converts spreadsheet
